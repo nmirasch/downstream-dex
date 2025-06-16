@@ -37,7 +37,7 @@ spec:
         CONTAINER_VERSION="$(git describe --tags --always --abbrev=7)"
         DOWNSTREAM_SOURCE_URL="$(git config --get remote.origin.url)"
         DOWNSTREAM_COMMIT_REF="$(git rev-parse HEAD)"
-        cd dex
+        cd argocd-agent
         UPSTREAM_SOURCE_URL="$(git config --get remote.origin.url)"
         UPSTREAM_COMMIT_REF="$(git rev-parse HEAD)"
 

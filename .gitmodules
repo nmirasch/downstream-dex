@@ -1,3 +1,5 @@
-[submodule "dex"]
-	path = dex
-	url = https://github.com/dexidp/dex.git
+
+[submodule "argocd-agent"]
+	path = argocd-agent
+	url = https://github.com/argoproj-labs/argocd-agent.git
+	branch = main

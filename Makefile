@@ -1,29 +1,29 @@
 # Tool to build the container image. It can be either docker or podman
 CONTAINER_RUNTIME ?= docker
 
-IMAGE ?= registry.redhat.io/openshift-gitops-1/dex-rhel8:dev
+IMAGE ?= registry.redhat.io/openshift-gitops-1/argocd-agent-rhel8:dev
 
 build-plugin:
 	$(CONTAINER_RUNTIME) build -t $(IMAGE) -f ./Containerfile.plugin .
 
-# Update the dex submodule to a specific commit or tag
-update-dex:
+# Update the argocd-agent submodule to a specific commit or tag
+update-argocd-agent:
 	@if [ -z "$(ref)" ]; then \
-		echo "Usage: make update-dex ref=<commit-or-tag>"; \
+		echo "Usage: make update-argocd-agent ref=<commit-or-tag>"; \
 		exit 1; \
 	fi
-	@if [ ! -d "./dex/.git" ]; then \
-		echo "Error: 'dex' submodule is not initialized or not a valid submodule."; \
+	@if [ ! -d "./argocd-agent/.git" ]; then \
+		echo "Error: 'argocd-agent' submodule is not initialized or not a valid submodule."; \
 		echo "To initialize the submodule, run:"; \
 		echo "    git submodule update --init --recursive"; \
 		exit 1; \
 	fi
-	cd dex && \
-	git fetch origin || { echo "Error: Failed to fetch updates for dex submodule"; exit 1; } && \
-	git checkout $(ref) || { echo "Error: Failed to checkout $(ref) in dex submodule"; exit 1; } && \
+	cd argocd-agent && \
+	git fetch origin || { echo "Error: Failed to fetch updates for argocd-agent submodule"; exit 1; } && \
+	git checkout $(ref) || { echo "Error: Failed to checkout $(ref) in argocd-agent submodule"; exit 1; } && \
 	cd .. && \
-	git add dex || { echo "Error: Failed to stage updated submodule"; exit 1; } && \
-	echo "Successfully updated dex submodule to $(ref)"
+	git add argocd-agent || { echo "Error: Failed to stage updated submodule"; exit 1; } && \
+	echo "Successfully updated argocd-agent submodule to $(ref)"
 
 # Generate rpms.lock.yaml file
 # Use upstream container image for rpm-lockfile-prototype tool when available
