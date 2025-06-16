@@ -29,7 +29,7 @@ RUN CGO_ENABLED=0 go build -mod=mod -o dist/argocd-agent-agent -ldflags "-extldf
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal
 
-COPY --from=builder /app/dist/argocd-agent-agent /bin/argocd-agent-agent
+COPY --from=builder /app/argocd-agent/dist/argocd-agent-agent /bin/argocd-agent-agent
 ENTRYPOINT ["./bin/argocd-agent-agent"]
 
 USER 999
