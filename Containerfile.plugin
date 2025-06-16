@@ -21,15 +21,16 @@ ENV GIT_COMMITTER_NAME devtools
 ENV GIT_COMMITTER_EMAIL devtools@redhat.com
 LABEL com.redhat.delivery.appregistry=true
 
-WORKDIR /src
+COPY . /app
+WORKDIR /app/argocd-agent
 
-COPY . .
 
-RUN make agent
+RUN CGO_ENABLED=0 go build -mod=mod -o dist/argocd-agent-agent -ldflags "-extldflags=-static" ./cmd/agent/main.go
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal
 
-COPY --from=builder /src/dist/argocd-agent-agent /bin/argocd-agent-agent
+COPY --from=builder /app/dist/argocd-agent-agent /bin/argocd-agent-agent
+ENTRYPOINT ["./bin/argocd-agent-agent"]
 
 USER 999
 
@@ -48,5 +49,4 @@ LABEL \
     description="Red Hat OpenShift GitOps ArgoCD Agent"
 
 
-ENTRYPOINT ["/bin/argocd-agent-agent"]
 

@@ -1,10 +1,10 @@
-# Red Hat Openshift GitOps Dex
+# Red Hat Openshift GitOps ArgoCD Agent
 
-This repo holds configurations to build upstream Dex via Konflux CI for Red Hat Openshift GitOps.
+This repo holds configurations to build upstream ArgoCD Agent via Konflux CI for Red Hat Openshift GitOps.
 
 ## How to update argocd-agent version?
 
-Use `make update-argocd-agent ref=<commit-or-tag>` target to update dex submodule. 
+Use `make update-argocd-agent ref=<commit-or-tag>` target to update argocd-agent submodule. 
 
 Example:
 ```bash
