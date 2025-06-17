@@ -29,7 +29,7 @@ spec:
     value: 5d
   - name: dockerfile
     value: Containerfile.plugin
-  - name: hermeticAdd commentMore actions
+  - name: hermetic
     value: "true"
   - name: prefetch-input
     value: '[{"type": "gomod", "path": "./argocd-agent"}]'
