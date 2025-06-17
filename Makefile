@@ -1,7 +1,7 @@
 # Tool to build the container image. It can be either docker or podman
 CONTAINER_RUNTIME ?= docker
 
-IMAGE ?= registry.redhat.io/openshift-gitops-1/argocd-agent-rhel8:dev
+IMAGE ?= registry.redhat.io/openshift-gitops-1/argocd-agent-principal-rhel8:dev
 
 build-plugin:
 	$(CONTAINER_RUNTIME) build -t $(IMAGE) -f ./Containerfile.plugin .
