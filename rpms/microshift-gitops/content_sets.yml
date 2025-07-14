@@ -1,0 +1,7 @@
+---
+aarch64:
+- rhel-9-for-aarch64-baseos-rpms
+- rhel-9-for-aarch64-appstream-rpms
+x86_64:
+- rhel-9-for-x86_64-baseos-rpms
+- rhel-9-for-x86_64-appstream-rpms
