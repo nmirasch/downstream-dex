@@ -24,11 +24,11 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/rh-openshift-gitops-tenant/microshift-gitops-rpm:{{revision}}
+    value: quay.io/redhat-user-workloads/rh-openshift-gitops-tenant/testing-microshift-gitops-rpm:{{revision}}
   - name: dockerfile
     value: Dockerfile
   - name: path-context
-    value: rpms
+    value: rpms/microshift-gitops
   pipelineSpec:
     finally:
     - name: show-summary
