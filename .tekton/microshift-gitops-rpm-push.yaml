@@ -125,7 +125,6 @@ spec:
       - name: ociStorage
         value: $(params.ociStorage)
   
-
   params:
   - name: git-url
     value: "{{ source_url }}"
