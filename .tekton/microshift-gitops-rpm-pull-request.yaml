@@ -19,21 +19,117 @@ metadata:
   name: microshift-gitops-rpm-on-pull-request
   namespace: rh-openshift-gitops-tenant
 spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/redhat-user-workloads/rh-openshift-gitops-tenant/testing-microshift-gitops-rpm:{{revision}}
+  - name: dockerfile
+    value: Dockerfile
+  - name: path-context
+    value: rpms/microshift-gitops
   pipelineSpec:
+    finally:
+    - name: show-summary
+      params:
+      - name: pipelinerun-name
+        value: $(context.pipelineRun.name)
+      - name: git-url
+        value: $(tasks.clone-repository.results.url)?rev=$(tasks.clone-repository.results.commit)
+      - name: image-url
+        value: $(params.output-image)
+      - name: build-task-status
+        value: $(tasks.build-image-index.status)
+      taskRef:
+        params:
+        - name: name
+          value: summary
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-summary:0.2@sha256:3f6e8513cbd70f0416eb6c6f2766973a754778526125ff33d8e3633def917091
+        - name: kind
+          value: task
+        resolver: bundles
     params:
+    - description: Source Repository URL
+      name: git-url
+      type: string
+    - default: ""
+      description: Revision of the Source Repository
+      name: revision
+      type: string
+    - description: Fully Qualified Output Image
+      name: output-image
+      type: string
+    - default: .
+      description: Path to the source code of an application's component from where
+        to build image.
+      name: path-context
+      type: string
+    - default: Dockerfile
+      description: Path to the Dockerfile inside the context specified by parameter
+        path-context
+      name: dockerfile
+      type: string
+    - default: "false"
+      description: Force rebuild image
+      name: rebuild
+      type: string
+    - default: "false"
+      description: Skip checks against built image
+      name: skip-checks
+      type: string
+    - default: "false"
+      description: Execute the build with network isolation
+      name: hermetic
+      type: string
+    - default: ""
+      description: Build dependencies to be prefetched by Cachi2
+      name: prefetch-input
+      type: string
+    - default: ""
+      description: Image tag expiration time, time values could be something like
+        1h, 2d, 3w for hours, days, and weeks, respectively.
+      name: image-expires-after
+      type: string
+    - default: "false"
+      description: Build a source image.
+      name: build-source-image
+      type: string
+    - default: "false"
+      description: Add built image into an OCI image index
+      name: build-image-index
+      type: string
     - name: git-url
+      value: "{{ source_url }}"
     - name: revision
+      value: "{{ revision }}"
     - name: ociStorage
+      value: "quay.io/redhat-user-workloads/rpm-build-pipeline-tenant/praiskup-test-package"
     - name: argo-cd-url
+      value: "registry.redhat.io/openshift-gitops-1/argocd-rhel9:gitops-1.17-rhel-9-candidate"
     - name: redis-url
+      value: "registry.redhat.io/rhel9/redis-6:rhel-9.3.0-container-released"
     - name: source-commit
+      value: "a1b2c3d4"
     - name: source-url
-    workspaces:
-    - name: source
-    - name: git-auth
-    
+      value: "https://github.com/argoproj/argo-cd"
+    results:
+    - description: ""
+      name: IMAGE_URL
+      value: $(tasks.build-image-index.results.IMAGE_URL)
+    - description: ""
+      name: IMAGE_DIGEST
+      value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+    - description: ""
+      name: CHAINS-GIT_URL
+      value: $(tasks.clone-repository.results.url)
+    - description: ""
+      name: CHAINS-GIT_COMMIT
+      value: $(tasks.clone-repository.results.commit)
     tasks:
-    # TASK 1: Clone repository
+    # TASK1: Clone repository
     - name: fetch-repository
       taskRef: { name: git-clone, kind: ClusterTask }
       workspaces:
@@ -45,7 +141,7 @@ spec:
       - name: revision
         value: $(params.revision)
     
-    # TASK 2: Build spec generator image
+    # TASK 2: Build the docker image to generate the spec file
     - name: build-spec-generator-image
       runAfter: [fetch-repository]
       taskRef: { name: buildah, kind: ClusterTask }
@@ -53,12 +149,12 @@ spec:
       - name: IMAGE
         value: "$(params.ociStorage)-spec-generator:{{revision}}"
       - name: DOCKERFILE
-        value: "rpms/microshift-gitops/Dockerfile"
+        value: rpms/microshift-gitops/Dockerfile
       workspaces:
       - name: source
         workspace: source
     
-    # TASK 3: Generarate .spec file
+    # TASK 3: Generate.spec file
     - name: generate-spec-file
       runAfter: [build-spec-generator-image]
       taskSpec:
@@ -81,7 +177,7 @@ spec:
             export REDIS_IMAGE_URL_WITH_TAG="$(params.redis-url)"
             export CI_ARGO_CD_UPSTREAM_COMMIT="$(params.source-commit)"
             export CI_ARGO_CD_UPSTREAM_URL="$(params.source-url)"
-            ./scripts/generate-spec-only.sh
+            pre-build-script.sh
       workspaces:
       - name: source
         workspace: source
@@ -96,55 +192,42 @@ spec:
         value: $(params.source-url)
       - name: generator-image-url
         value: $(tasks.build-spec-generator-image.results.IMAGE_URL)
-      
-      # TASK 4: Konflux standar pipeline to build the el RPM
-      - name: build-rpm-using-konflux-standard
-        runAfter: [generate-spec-file]
-        taskRef:
-          resolver: git
-          params:
-          - name: url
-            value: "https://github.com/konflux-ci/rpmbuild-pipeline.git"
-          - name: revision
-            value: main
-          - name: pathInRepo
-            value: pipeline/build-rpm-package.yaml
-        workspaces:
-        - name: source
-          workspace: source
-        - name: git-auth
-          workspace: git-auth
+    
+    # TASK 4: konflux pipeline to build the RPM
+    - name: build-rpm-using-konflux-standard
+      runAfter: [generate-spec-file]
+      taskRef:
+        resolver: git
         params:
-        - name: git-url
-          value: $(params.git-url)
+        - name: url
+          value: "https://github.com/konflux-ci/rpmbuild-pipeline.git"
         - name: revision
-          value: $(params.revision)
-        - name: package-name
-          value: "microshift-gitops"
-        - name: ociStorage
-          value: $(params.ociStorage)
-params:
-  - name: git-url
-    value: "{{ source_url }}"
-  - name: revision
-    value: "{{ revision }}"
-  - name: ociStorage
-    value: "quay.io/redhat-user-workloads/rpm-build-pipeline-tenant/praiskup-test-package"
-  - name: argo-cd-url
-    value: "registry.redhat.io/openshift-gitops-1/argocd-rhel9:gitops-1.17-rhel-9-candidate"
-  - name: redis-url
-    value: "registry.redhat.io/rhel9/redis-6:rhel-9.3.0-container-released"
-  - name: source-commit
-    value: "a1b2c3d4"
-  - name: source-url
-    value: "https://github.com/argoproj/argo-cd"
-  
-workspaces:
-  - name: source
-    volumeClaimTemplate:
-      spec:
-        accessModes: [ReadWriteOnce]
-        resources: { requests: { storage: 1Gi } }
+          value: main
+        - name: pathInRepo
+          value: pipeline/build-rpm-package.yaml
+      workspaces:
+      - name: source
+        workspace: source
+      - name: git-auth
+        workspace: git-auth
+      params:
+      - name: git-url
+        value: $(params.git-url)
+      - name: revision
+        value: $(params.revision)
+      - name: package-name
+        value: microshift-gitops
+      - name: ociStorage
+        value: $(params.ociStorage)
+    workspaces:
+    - name: git-auth
+      optional: true
+    - name: source
+      optional: true
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-microshift-gitops-rpm
+  workspaces:
   - name: git-auth
     secret:
       secretName: '{{ git_auth_secret }}'
+status: {}
