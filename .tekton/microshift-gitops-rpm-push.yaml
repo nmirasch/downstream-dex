@@ -96,7 +96,7 @@ spec:
       - name: generator-image-url
         value: $(tasks.build-spec-generator-image.results.IMAGE_URL)
     
-    # TASK 4: Standart pipeline to build the RPM
+    # TASK 4: Standar pipeline to build the RPM
     - name: build-rpm-using-konflux-standard
       runAfter: [generate-spec-file]
       taskRef:
@@ -118,8 +118,6 @@ spec:
         value: $(params.git-url)
       - name: revision
         value: $(params.revision)
-      # La pipeline estándar espera el nombre del paquete, no tenemos un param para él,
-      # así que lo podemos hardcodear o añadir un nuevo param a nuestra pipeline.
       - name: package-name
         value: microshift-gitops
       - name: ociStorage
