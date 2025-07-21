@@ -23,13 +23,11 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/rh-openshift-gitops-tenant/testing-microshift-gitops-rpm:{{revision}}
+    value: quay.io/redhat-user-workloads/rh-openshift-gitops-tenant/microshift-gitops-rpm:{{revision}}
   - name: dockerfile
-    value: rpms/microshift-gitops/Dockerfile
-  - name: hermetic
-    value: "true"
-  - name: prefetch-input
-    value: '[{"type": "rpm", "path": "./deps/rpms"}]'
+    value: Dockerfile
+  - name: path-context
+    value: rpms
   pipelineSpec:
     finally:
     - name: show-summary
@@ -318,6 +316,8 @@ spec:
       optional: true
     - name: netrc
       optional: true
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-microshift-gitops-rpm
   workspaces:
   - name: git-auth
     secret:
