@@ -1,128 +1,273 @@
+#debuginfo not supported with Go
+%global debug_package %{nil}
 
-Name:           microshift-gitops
-Version:        2.12.1
-Release:        6%{?dist}
-Summary:        Prints a familiar, friendly greeting
-# All code is GPLv3+.
-# Parts of the documentation are under GFDL
-License:        GPL-3.0-or-later AND GFDL-1.3-or-later
-URL:            https://www.gnu.org/software/hello/
-Source0:        https://ftp.gnu.org/gnu/hello/hello-%{version}.tar.gz
-Source1:        https://ftp.gnu.org/gnu/hello/hello-%{version}.tar.gz.sig
-Source2:        https://ftp.gnu.org/gnu/gnu-keyring.gpg
+%global package_name microshift-gitops
+%global product_name OpenShift GitOps (ArgoCD) components for MicroShift
+%global microshift_gitops_version ${CI_X_VERSION}.${CI_Y_VERSION}.${CI_Z_VERSION}
+%global microshift_gitops_release %(echo ${CI_SPEC_RELEASE} | sed -e s/rhel-9-//g)
+%global commitid ${CI_ARGO_CD_UPSTREAM_COMMIT}
+%global source_dir argo-cd-%{commitid}
+%global source_tar argo-cd-${CI_ARGO_CD_UPSTREAM_COMMIT}.tar.gz
 
-BuildRequires:  gcc
-BuildRequires:  gnupg2
-BuildRequires:  make
-Recommends:     info
-Provides:       bundled(gnulib)
+Name:           %{package_name}
+Version:        %{microshift_gitops_version}
+Release:        %{microshift_gitops_release}%{?dist}
+Summary:        The %{product_name} package provides the required kustomize manifests for the OpenShift GitOps (ArgoCD) components to be installed on MicroShift.
+License:        ASL 2.0
+URL:            https://github.com/argoproj/argo-cd/commit/a1b2c3d4
+
+Source0:        %{source_tar}
+BuildRequires:  sed
+Provides:       %{package_name}
+Obsoletes:      %{package_name}
+Requires:       microshift >= 4.14
 
 %description
-The GNU Hello program produces a familiar, friendly greeting.
-Yes, this is another implementation of the classic program that
-prints “Hello, world!” when you run it.
+%{summary}
 
-However, unlike the minimal version often seen, GNU Hello processes
-its argument list to modify its behavior, supports greetings in many
-languages, and so on. The primary purpose of GNU Hello is to
-demonstrate how to write other programs that do these things; it
-serves as a model for GNU coding standards and GNU maintainer
-practices.
+%package release-info
+Summary: Release information for MicroShift GitOps
+BuildArch: noarch
 
+%description release-info
+The %{package_name}-release-info package provides release information files for this
+release. These files contain the list of container image references used by
+MicroShift GitOps and can be used to embed those images into osbuilder blueprints.
+An example of such osbuilder blueprints for x86_64 and aarch64 platforms are
+also included in the package.
 
 %prep
-%{gpgverify} --keyring='%{SOURCE2}' --signature='%{SOURCE1}' --data='%{SOURCE0}'
-%setup -q
-
+%setup -q -n %{source_dir}
 
 %build
-%configure
-%make_build
 
+# Remove runAsUser property set in redis deployment as it causes deployments in microshift to fail security constratint context (SCC)
+sed -i '/^[[:space:]]\+runAsUser: 999$/d' "manifests/base/redis/argocd-redis-deployment.yaml"
+
+# Remove server related Cluster RBAC policies
+rm -rf "manifests/cluster-rbac/server"
+sed -i '/- .\/server/d' "manifests/cluster-rbac/kustomization.yaml"
+sed -i '/- .\/applicationset-controller/d' "manifests/cluster-rbac/kustomization.yaml"
+
+# Change the namespace of the service account from argocd to openshift-gitops
+sed -i 's/namespace: .*/namespace: openshift-gitops/g' "manifests/cluster-rbac/application-controller/argocd-application-controller-clusterrolebinding.yaml"
+
+# Change the imagePullPolicy to IfNotPresent to support disconnected environment usecase
+sed -i 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' "manifests/base/application-controller/argocd-application-controller-statefulset.yaml"
+sed -i 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' "manifests/base/repo-server/argocd-repo-server-deployment.yaml"
+sed -i 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/g' "manifests/base/redis/argocd-redis-deployment.yaml"
+
+# Manifest file for creating the openshift-gitops namespace
+mkdir -p "manifests/microshift-gitops/"
+cat <<EOF > "manifests/microshift-gitops/namespace.yaml"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-gitops
+EOF
+
+# Add the required args for the redis container image available in Red Hat repositories. This is different from the redis7 image used by the upstream.
+cat <<EOF >"manifests/microshift-gitops/redis-patch-args.yaml"
+- op: add
+  path: /spec/template/spec/containers/0/args/0
+  value: "redis-server"
+- op: add
+  path: /spec/template/spec/containers/0/args/1
+  value: "--protected-mode"
+- op: add
+  path: /spec/template/spec/containers/0/args/2
+  value: "no"
+EOF
+
+# Create Kustomization files
+cat <<EOF >"manifests/microshift-gitops/kustomization.yaml"
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openshift-gitops
+resources:
+  - namespace.yaml
+  - application-controller
+  - cluster-rbac
+  - config
+  - crds
+  - redis
+  - repo-server
+patches:
+  - path: redis-patch-args.yaml
+    target:
+      kind: Deployment
+      name: argocd-redis
+      labelSelector: app.kubernetes.io/part-of=argocd
+EOF
+
+#TODO: Find a better way to do away with the hardcoded image URLs
+%ifarch arm64 aarch64
+cat <<EOF >>"manifests/microshift-gitops/kustomization.yaml"
+images:
+  - name: quay.io/argoproj/argocd
+    newName: registry.redhat.io/openshift-gitops-1/argocd-rhel9
+    digest: "sha256:f31f13537a775b565a0528e14a5382f7e704eb5895782a4d467978d2ca0c7b69"
+  - name: redis
+    newName: registry.redhat.io/rhel9/redis-6
+    digest: "sha256:91302b4831f247f525634563b20257451079d85442f4c9c193568ea535a3962e"
+EOF
+%endif
+
+%ifarch x86_64
+cat <<EOF >>"manifests/microshift-gitops/kustomization.yaml"
+images:
+  - name: quay.io/argoproj/argocd
+    newName: registry.redhat.io/openshift-gitops-1/argocd-rhel9
+    digest: "sha256:d8da639a06637389a6474b33b497491d96070621371e7a6855146b882658b4e7"
+  - name: redis
+    newName: registry.redhat.io/rhel9/redis-6
+    digest: "sha256:91302b4831f247f525634563b20257451079d85442f4c9c193568ea535a3962e"
+EOF
+%endif
+
+#GitOps release-info artifacts
+mkdir -p "microshift-assets"
+cat <<EOF >"microshift-assets/release-gitops-arm64.json"
+{
+  "release": {
+    "base": "1.16"
+  },
+  "images": {
+    "openshift-gitops-argocd": "registry.redhat.io/openshift-gitops-1/argocd-rhel9@sha256:f31f13537a775b565a0528e14a5382f7e704eb5895782a4d467978d2ca0c7b69",
+    "redis": "registry.redhat.io/rhel9/redis-6@sha256:91302b4831f247f525634563b20257451079d85442f4c9c193568ea535a3962e"
+  }
+}
+EOF
+
+cat <<EOF >"microshift-assets/release-gitops-x86_64.json"
+{
+  "release": {
+    "base": "1.16"
+  },
+  "images": {
+    "openshift-gitops-argocd": "registry.redhat.io/openshift-gitops-1/argocd-rhel9@sha256:d8da639a06637389a6474b33b497491d96070621371e7a6855146b882658b4e7",
+    "redis": "registry.redhat.io/rhel9/redis-6@sha256:91302b4831f247f525634563b20257451079d85442f4c9c193568ea535a3962e"
+  }
+}
+EOF
+
+cat <<'EOF' >"microshift-assets/microshift_running_check_gitops.sh"
+#!/bin/bash
+
+set -eu -o pipefail
+
+SCRIPT_NAME=$(basename "$0")
+CHECK_DEPLOY_NS="openshift-gitops"
+
+# Source the MicroShift health check functions library
+source /usr/share/microshift/functions/greenboot.sh
+
+# Set the term handler to convert exit code to 1
+trap 'forced_termination' TERM SIGINT
+
+# Set the exit handler to log the exit status
+trap 'log_script_exit' EXIT
+
+# Handler that will be called when the script is terminated by sending TERM or
+# INT signals. To override default exit codes it forces returning 1 like the
+# rest of the error conditions throughout the health check.
+function forced_termination() {
+    echo "Signal received, terminating."
+    exit 1
+}
+
+# Exit if the current user is not 'root'
+if [ "$(id -u)" -ne 0 ] ; then
+    echo "The '${SCRIPT_NAME}' script must be run with the 'root' user privileges"
+    exit 1
+fi
+
+echo "STARTED"
+
+# Print the boot variable status
+print_boot_status
+
+# Exit if the MicroShift service is not enabled
+if [ "$(systemctl is-enabled microshift.service 2>/dev/null)" != "enabled" ] ; then
+    echo "MicroShift service is not enabled. Exiting..."
+    exit 0
+fi
+
+# Set the wait timeout for the current check based on the boot counter
+WAIT_TIMEOUT_SECS=$(get_wait_timeout)
+
+LOG_POD_EVENTS=true
+
+# Wait for the deployments to be ready
+echo "Waiting ${WAIT_TIMEOUT_SECS}s for '${CHECK_DEPLOY_NS}' deployments to be ready"
+if ! wait_for "${WAIT_TIMEOUT_SECS}" namespace_deployment_ready ; then
+    echo "Error: Timed out waiting for '${CHECK_DEPLOY_NS}' deployments to be ready"
+    exit 1
+fi
+EOF
 
 %install
-%make_install
-rm -f %{buildroot}%{_infodir}/dir
-%find_lang hello
 
+# GitOps manifests
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/crds
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller-roles
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/config
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/redis
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/repo-server
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac
+install -d -m755 %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac/application-controller
+install -d -m755 %{buildroot}%{_sysconfdir}/greenboot/check/required.d
 
-%check
-make check
+# Copy all the GitOps manifests except the arch specific ones
+install -p -m644 manifests/microshift-gitops/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/
+install -p -m644 manifests/crds/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/crds
+install -p -m644 manifests/base/application-controller/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller
+install -p -m644 manifests/base/application-controller-roles/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller-roles
+install -p -m644 manifests/base/config/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/config
+install -p -m644 manifests/base/redis/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/redis
+install -p -m644 manifests/base/repo-server/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/repo-server
+install -p -m644 manifests/cluster-rbac/kustomization.yaml %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac
+install -p -m644  manifests/cluster-rbac/application-controller/* %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac/application-controller
+install -p -m755 microshift-assets/microshift_running_check_gitops.sh %{buildroot}%{_sysconfdir}/greenboot/check/required.d/60_microshift_running_check_gitops.sh
 
+mkdir -p -m755 %{buildroot}%{_datadir}/microshift/release
+install -p -m644 microshift-assets/release-gitops* %{buildroot}%{_datadir}/microshift/release/
 
-%files -f hello.lang
-%license COPYING
-%{_mandir}/man1/hello.1*
-%{_bindir}/hello
-%{_infodir}/hello.info*
+# TODO: Test to see if the kustomize directories are set correctly.
+# kustomize build %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops
+# oc create -k %{buildroot}/%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops --dry-run=client --validate=false
 
+%files
+%license LICENSE
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/crds
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller-roles
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/config
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/redis
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/repo-server
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac
+%dir %{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac/application-controller
+%dir %{_sysconfdir}/greenboot/check/required.d
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/crds/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/application-controller-roles/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/config/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/redis/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/repo-server/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac/*
+%{_prefix}/lib/microshift/manifests.d/020-microshift-gitops/cluster-rbac/application-controller/*
+%{_sysconfdir}/greenboot/check/required.d/60_microshift_running_check_gitops.sh
+
+%files release-info
+%dir %{_datadir}/microshift
+%dir %{_datadir}/microshift/release
+
+%{_datadir}/microshift/release/release-gitops*.json
 
 %changelog
-* Fri Jan 17 2025 Fedora Release Engineering <releng@fedoraproject.org> - 2.12.1-6
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_42_Mass_Rebuild
-
-* Thu Jul 18 2024 Fedora Release Engineering <releng@fedoraproject.org> - 2.12.1-5
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_41_Mass_Rebuild
-
-* Wed Jan 24 2024 Fedora Release Engineering <releng@fedoraproject.org> - 2.12.1-4
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_40_Mass_Rebuild
-
-* Sat Jan 20 2024 Fedora Release Engineering <releng@fedoraproject.org> - 2.12.1-3
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_40_Mass_Rebuild
-
-* Thu Jul 20 2023 Fedora Release Engineering <releng@fedoraproject.org> - 2.12.1-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_39_Mass_Rebuild
-
-* Tue Jul  4 2023 Jens Petersen <petersen@redhat.com> - 2.12.1-1
-- update to 2.12.1
-- SPDX migration of license tags
-
-* Thu Jan 19 2023 Fedora Release Engineering <releng@fedoraproject.org> - 2.10-9
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_38_Mass_Rebuild
-
-* Thu Jul 21 2022 Fedora Release Engineering <releng@fedoraproject.org> - 2.10-8
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_37_Mass_Rebuild
-
-* Thu Jan 20 2022 Fedora Release Engineering <releng@fedoraproject.org> - 2.10-7
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_36_Mass_Rebuild
-
-* Thu Jul 22 2021 Fedora Release Engineering <releng@fedoraproject.org> - 2.10-6
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_35_Mass_Rebuild
-
-* Tue Jan 26 2021 Fedora Release Engineering <releng@fedoraproject.org> - 2.10-5
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_34_Mass_Rebuild
-
-* Tue Jul 28 2020 Fedora Release Engineering <releng@fedoraproject.org> - 2.10-4
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_33_Mass_Rebuild
-
-* Wed Apr  1 2020 Jens Petersen <petersen@redhat.com> - 2.10-3
-- packaging fixes (#1810897)
-- use https urls
-- use make_build, make_install, buildroot, and license macros
-
-* Fri Mar  6 2020 Jens Petersen <petersen@redhat.com> - 2.10-2
-- add gpgverify of source
-
-* Thu Mar  5 2020 Jens Petersen <petersen@redhat.com> - 2.10-1
-- update to 2.10
-
-* Fri Jan 13 2012 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.6-3
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_17_Mass_Rebuild
-
-* Wed Feb 09 2011 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.6-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_15_Mass_Rebuild
-
-* Wed Jan 12 2011 Conrad Meyer <konrad@tylerc.org> - 2.6-1
-- Bump to 2.6.
-
-* Sun Mar 28 2010 Conrad Meyer <konrad@tylerc.org> - 2.5-1
-- Bump version.
-
-* Fri Jul 24 2009 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.4-3
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_12_Mass_Rebuild
-
-* Tue Feb 24 2009 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 2.4-2
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_11_Mass_Rebuild
-
-* Wed Dec 17 2008 Conrad Meyer <konrad@tylerc.org> - 2.4-1
-- Initial package.
+* Tue Jan 09 2024 Anand Francis Joseph <anjoseph@redhat.com>
+- initial commit
