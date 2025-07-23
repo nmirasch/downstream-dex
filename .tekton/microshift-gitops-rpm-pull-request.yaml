@@ -28,9 +28,11 @@ spec:
   - name: revision
     value: "{{ revision }}"
   - name: target-branch
-    value:
-  - name: path-in-repo
-    value: rpms/microshift-gitops
+    value: "{{ target_branch }}"
+  - name: build-architectures
+    value: "amd64,arm64"
+  - name: hermetic
+    value: "true"
   pipelineRef:
     resolver: git
     params:
