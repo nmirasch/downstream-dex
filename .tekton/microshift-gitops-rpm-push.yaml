@@ -37,6 +37,9 @@ spec:
     - name: pathInRepo
       value: pipeline/build-rpm-package.yaml
   workspaces:
+  - name: source
+    persistentVolumeClaim:
+      claimName: "{{pvc_name}}"
   - name: git-auth
     secret:
       secretName: '{{ git_auth_secret }}'
