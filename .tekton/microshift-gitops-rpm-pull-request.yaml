@@ -28,7 +28,9 @@ spec:
   - name: revision
     value: "{{ revision }}"
   - name: target-branch
-    value: "{{ target_branch }}"
+    value:
+  - name: specfile
+    value: rpms/microshift-gitops/microshift-gitops.spec
   pipelineRef:
     resolver: git
     params:
