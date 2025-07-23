@@ -29,7 +29,7 @@ spec:
     value: "{{ revision }}"
   - name: target-branch
     value:
-  - name: context-dir
+  - name: path-in-repo
     value: rpms/microshift-gitops
   pipelineRef:
     resolver: git
