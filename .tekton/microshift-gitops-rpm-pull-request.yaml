@@ -20,7 +20,7 @@ metadata:
 spec:
   params:
   - name: ociStorage
-    value: quay.io/redhat-user-workloads/rh-openshift-gitops-tenant/microshift-gitops-rpm:{{revision}}
+    value: quay.io/redhat-user-workloads/nmirasch-tenant/microshift-gitops-rpm:{{revision}}
   - name: package-name
     value: microshift-gitops
   - name: git-url
@@ -29,8 +29,6 @@ spec:
     value: "{{ revision }}"
   - name: target-branch
     value: "{{ target_branch }}"
-  - name: build-architectures
-    value: [ aarch64, x86_64 ]
   - name: hermetic
     value: "true"
   pipelineRef:
