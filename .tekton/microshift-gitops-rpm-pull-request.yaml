@@ -29,8 +29,6 @@ spec:
     value: "{{ revision }}"
   - name: target-branch
     value: "{{ target_branch }}"
-  - name: build-architectures
-    value: ["amd64,arm64"]
   - name: hermetic
     value: "true"
   pipelineRef:
