@@ -3,7 +3,8 @@
 
 %global package_name microshift-gitops
 %global product_name OpenShift GitOps (ArgoCD) components for MicroShift
-%global microshift_gitops_version ${CI_X_VERSION}.${CI_Y_VERSION}.${CI_Z_VERSION}
+#%global microshift_gitops_version ${CI_X_VERSION}.${CI_Y_VERSION}.${CI_Z_VERSION}
+%global microshift_gitops_version 0.0.1
 %global microshift_gitops_release %(echo ${CI_SPEC_RELEASE} | sed -e s/rhel-9-//g)
 %global commitid 02de363d9cc3cbdf4de0b56ff21eb6d4c7cc3ca1
 %global source_dir argo-cd-%{commitid}
